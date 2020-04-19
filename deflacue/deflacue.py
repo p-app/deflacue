@@ -237,11 +237,6 @@ class Deflacue(object):
         if cd_info['DATE'] is not None:
             title = '%s - %s' % (cd_info['DATE'], title)
 
-        try:  # Py2 support
-            target_path = target_path.decode('utf-8')
-        except AttributeError:
-            pass
-
         bundle_path = os.path.join(target_path, cd_info['PERFORMER'], title)
         self._create_target_path(bundle_path)
 

@@ -1,6 +1,5 @@
 import logging
 from copy import deepcopy
-from io import open
 
 from .exc import DeflacueError
 
