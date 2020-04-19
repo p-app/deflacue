@@ -24,7 +24,11 @@ setup(
     include_package_data=True,
     zip_safe=False,
 
-    scripts=['bin/deflacue'],
+    entry_points={
+        'console_scripts': [
+            'deflacue = deflacue.deflacue:main',
+        ],
+    },
 
     classifiers=[
         'Development Status :: 5 - Production/Stable',
