@@ -9,6 +9,34 @@ __all__ = [
 ]
 
 
+def _unquote(in_str):
+    return in_str.strip(' "')
+
+
+def _timestr_to_sec(timestr):
+    """Converts `mm:ss:` time string into seconds integer."""
+    splitted = timestr.split(':')[:-1]
+    splitted.reverse()
+    seconds = 0
+    for i, chunk in enumerate(splitted, 0):
+        factor = pow(60, i)
+        if i == 0:
+            factor = 1
+        seconds += int(chunk) * factor
+    return seconds
+
+
+def _timestr_to_samples(timestr):
+    """Converts `mm:ss:ff` time string into samples integer, assuming the
+    CD sampling rate of 44100Hz."""
+    seconds_factor = 44100
+    # 75 frames per second of audio
+    frames_factor = seconds_factor // 75
+    full_seconds = _timestr_to_sec(timestr)
+    frames = int(timestr.split(':')[-1])
+    return full_seconds * seconds_factor + frames * frames_factor
+
+
 class CueParser(object):
     """Simple Cue Sheet file parser."""
 
@@ -68,59 +96,34 @@ class CueParser(object):
         """
         return self._context_tracks
 
-    def _unquote(self, in_str):
-        return in_str.strip(' "')
-
-    def _timestr_to_sec(self, timestr):
-        """Converts `mm:ss:` time string into seconds integer."""
-        splitted = timestr.split(':')[:-1]
-        splitted.reverse()
-        seconds = 0
-        for i, chunk in enumerate(splitted, 0):
-            factor = pow(60, i)
-            if i == 0:
-                factor = 1
-            seconds += int(chunk) * factor
-        return seconds
-
-    def _timestr_to_samples(self, timestr):
-        """Converts `mm:ss:ff` time string into samples integer, assuming the
-        CD sampling rate of 44100Hz."""
-        seconds_factor = 44100
-        # 75 frames per second of audio
-        frames_factor = seconds_factor // 75
-        full_seconds = self._timestr_to_sec(timestr)
-        frames = int(timestr.split(':')[-1])
-        return full_seconds * seconds_factor + frames * frames_factor
-
     def _in_global_context(self):
         return self._current_context == self._context_global
 
     def cmd_rem(self, args):
         subcommand, subargs = args.split(' ', 1)
         if subargs.startswith('"'):
-            subargs = self._unquote(subargs)
+            subargs = _unquote(subargs)
         self._current_context[subcommand.upper()] = subargs
 
     def cmd_performer(self, args):
-        unquoted = self._unquote(args)
+        unquoted = _unquote(args)
         self._current_context['PERFORMER'] = unquoted
 
     def cmd_title(self, args):
-        unquoted = self._unquote(args)
+        unquoted = _unquote(args)
         if self._in_global_context():
             self._current_context['ALBUM'] = unquoted
         else:
             self._current_context['TITLE'] = unquoted
 
     def cmd_file(self, args):
-        filename = self._unquote(args.rsplit(' ', 1)[0])
+        filename = _unquote(args.rsplit(' ', 1)[0])
         self._current_context['FILE'] = filename
 
     def cmd_index(self, args):
         timestr = args.split()[1]
         self._current_context['INDEX'] = timestr
-        self._current_context['POS_START_SAMPLES'] = self._timestr_to_samples(
+        self._current_context['POS_START_SAMPLES'] = _timestr_to_samples(
             timestr
         )
 

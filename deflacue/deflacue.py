@@ -35,6 +35,31 @@ _COMMENTS_CUE_TO_VORBIS = {
 }
 
 
+def _filter_target_extensions(files_dict):
+    """Takes file dictionary created with `get_dir_files` and returns
+    dictionary of the same kind containing only audio files of supported
+    types.
+
+    """
+    files_filtered = defaultdict(list)
+    logging.info('Filtering .cue files ...')
+    paths = files_dict.keys()
+
+    for path in paths:
+        if not path.endswith('deflacue'):
+            files = sorted(files_dict[path])
+            for f in files:
+                if os.path.splitext(f)[1] == '.cue':
+                    files_filtered[path].append(f)
+    return files_filtered
+
+
+def _configure_logging(verbosity_lvl=logging.INFO):
+    """Switches on logging at given level."""
+    logging.basicConfig(level=verbosity_lvl,
+                        format='%(levelname)s: %(message)s')
+
+
 class Deflacue(object):
     """deflacue functionality is encapsulated in this class.
 
@@ -81,7 +106,7 @@ class Deflacue(object):
         self.encoding = encoding
 
         if use_logging:
-            self._configure_logging(use_logging)
+            _configure_logging(use_logging)
 
         logging.info('Source path: %s', self.path_source)
         if not os.path.exists(self.path_source):
@@ -102,11 +127,6 @@ class Deflacue(object):
             std = prc.communicate()
             return prc.returncode, std
         return 0, ('', '')
-
-    def _configure_logging(self, verbosity_lvl=logging.INFO):
-        """Switches on logging at given level."""
-        logging.basicConfig(level=verbosity_lvl,
-                            format='%(levelname)s: %(message)s')
 
     def _create_target_path(self, path):
         """Creates a directory for target files."""
@@ -146,24 +166,6 @@ class Deflacue(object):
                 ] = [f for f in dir_files]
 
         return files
-
-    def filter_target_extensions(self, files_dict):
-        """Takes file dictionary created with `get_dir_files` and returns
-        dictionary of the same kind containing only audio files of supported
-        types.
-
-        """
-        files_filtered = defaultdict(list)
-        logging.info('Filtering .cue files ...')
-        paths = files_dict.keys()
-
-        for path in paths:
-            if not path.endswith('deflacue'):
-                files = sorted(files_dict[path])
-                for f in files:
-                    if os.path.splitext(f)[1] == '.cue':
-                        files_filtered[path].append(f)
-        return files_filtered
 
     def sox_check_is_available(self):
         """Checks whether SoX is available."""
@@ -266,7 +268,7 @@ class Deflacue(object):
         ):
             self._create_target_path(self.path_target)
 
-        files_dict = self.filter_target_extensions(
+        files_dict = _filter_target_extensions(
             self.get_dir_files(recursive)
         )
 
