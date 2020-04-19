@@ -13,7 +13,8 @@ setup(
     version='.'.join(map(str, VERSION)),
     url='http://github.com/idlesign/deflacue',
 
-    description='deflacue is a SoX based audio splitter to split audio CD images incorporated with .cue files',
+    description='deflacue is a SoX based audio splitter to split audio CD '
+                'images incorporated with .cue files',
     long_description=README,
     license='BSD 3-Clause License',
 
@@ -24,7 +25,11 @@ setup(
     include_package_data=True,
     zip_safe=False,
 
-    scripts=['bin/deflacue'],
+    entry_points={
+        'console_scripts': [
+            'deflacue = deflacue.script:run_deflacue',
+        ],
+    },
 
     classifiers=[
         'Development Status :: 5 - Production/Stable',
