@@ -9,7 +9,7 @@ __all__ = [
 ]
 
 
-def run_deflacue():
+def run_deflacue() -> None:
 
     argparser = argparse.ArgumentParser('deflacue.py')
 
