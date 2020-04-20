@@ -1,21 +1,21 @@
 import os
+
 from setuptools import setup
+
 from deflacue import VERSION
 
-
-f = open(os.path.join(os.path.dirname(__file__), 'README.rst'))
-README = f.read()
-f.close()
+with open(os.path.join(os.path.dirname(__file__), 'README.rst')) as f:
+    _README_CONTENT = f.read()
 
 
 setup(
     name='deflacue',
     version='.'.join(map(str, VERSION)),
-    url='http://github.com/idlesign/deflacue',
+    url='http://github.com/p-app/deflacue',
 
     description='deflacue is a SoX based audio splitter to split audio CD '
                 'images incorporated with .cue files',
-    long_description=README,
+    long_description=_README_CONTENT,
     license='BSD 3-Clause License',
 
     author='Igor `idle sign` Starikov',
@@ -43,4 +43,5 @@ setup(
         'Programming Language :: Python :: 3.7',
         'Topic :: Multimedia :: Sound/Audio :: Conversion',
     ],
+    python_requires='>=3.5',
 )
