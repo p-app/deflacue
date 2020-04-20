@@ -1,6 +1,6 @@
 import logging
 from copy import deepcopy
-from io import open
+from typing import Dict, List, Optional, Union
 
 from .exc import DeflacueError
 
@@ -9,10 +9,43 @@ __all__ = [
 ]
 
 
+_ContextType = Dict[str, Optional[Union[str, int]]]
+
+
+def _unquote(in_str: str) -> str:
+    return in_str.strip(' "')
+
+
+def _timestr_to_sec(timestr: str) -> int:
+    """Converts `mm:ss:` time string into seconds integer."""
+    splitted = timestr.split(':')[:-1]
+    splitted.reverse()
+    seconds = 0
+    for i, chunk in enumerate(splitted, 0):
+        factor = pow(60, i)
+        if i == 0:
+            factor = 1
+        seconds += int(chunk) * factor
+    return seconds
+
+
+def _timestr_to_samples(timestr: str) -> int:
+    """Converts `mm:ss:ff` time string into samples integer, assuming the
+    CD sampling rate of 44100Hz."""
+    seconds_factor = 44100
+    # 75 frames per second of audio
+    frames_factor = seconds_factor // 75
+    full_seconds = _timestr_to_sec(timestr)
+    frames = int(timestr.split(':')[-1])
+    return full_seconds * seconds_factor + frames * frames_factor
+
+
 class CueParser(object):
     """Simple Cue Sheet file parser."""
 
-    def __init__(self, cue_file, encoding=None):
+    def __init__(self,
+                 cue_file: str,
+                 encoding: Optional[str] = None) -> None:
         self._context_global = {
             'PERFORMER': 'Unknown',
             'SONGWRITER': None,
@@ -21,10 +54,10 @@ class CueParser(object):
             'DATE': None,
             'FILE': None,
             'COMMENT': None,
-        }
-        self._context_tracks = []
+        }  # type: _ContextType
+        self._context_tracks = []  # type: List[_ContextType]
 
-        self._current_context = self._context_global
+        self._current_context = self._context_global  # type: _ContextType
         try:
             with open(cue_file, encoding=encoding) as f:
                 lines = f.readlines()
@@ -57,79 +90,53 @@ class CueParser(object):
                 pass
             track_data['POS_END_SAMPLES'] = track_end_pos
 
-    def get_data_global(self):
+    def get_data_global(self) -> _ContextType:
         """Returns a dictionary with global CD data."""
         return self._context_global
 
-    def get_data_tracks(self):
+    def get_data_tracks(self) -> List[_ContextType]:
         """Returns a list of dictionaries with individual
         tracks data. Note that some of the data is borrowed from global data.
 
         """
         return self._context_tracks
 
-    def _unquote(self, in_str):
-        return in_str.strip(' "')
-
-    def _timestr_to_sec(self, timestr):
-        """Converts `mm:ss:` time string into seconds integer."""
-        splitted = timestr.split(':')[:-1]
-        splitted.reverse()
-        seconds = 0
-        for i, chunk in enumerate(splitted, 0):
-            factor = pow(60, i)
-            if i == 0:
-                factor = 1
-            seconds += int(chunk) * factor
-        return seconds
-
-    def _timestr_to_samples(self, timestr):
-        """Converts `mm:ss:ff` time string into samples integer, assuming the
-        CD sampling rate of 44100Hz."""
-        seconds_factor = 44100
-        # 75 frames per second of audio
-        frames_factor = seconds_factor // 75
-        full_seconds = self._timestr_to_sec(timestr)
-        frames = int(timestr.split(':')[-1])
-        return full_seconds * seconds_factor + frames * frames_factor
-
-    def _in_global_context(self):
+    def _in_global_context(self) -> bool:
         return self._current_context == self._context_global
 
-    def cmd_rem(self, args):
+    def cmd_rem(self, args: str) -> None:
         subcommand, subargs = args.split(' ', 1)
         if subargs.startswith('"'):
-            subargs = self._unquote(subargs)
+            subargs = _unquote(subargs)
         self._current_context[subcommand.upper()] = subargs
 
-    def cmd_performer(self, args):
-        unquoted = self._unquote(args)
+    def cmd_performer(self, args: str) -> None:
+        unquoted = _unquote(args)
         self._current_context['PERFORMER'] = unquoted
 
-    def cmd_title(self, args):
-        unquoted = self._unquote(args)
+    def cmd_title(self, args: str) -> None:
+        unquoted = _unquote(args)
         if self._in_global_context():
             self._current_context['ALBUM'] = unquoted
         else:
             self._current_context['TITLE'] = unquoted
 
-    def cmd_file(self, args):
-        filename = self._unquote(args.rsplit(' ', 1)[0])
+    def cmd_file(self, args: str) -> None:
+        filename = _unquote(args.rsplit(' ', 1)[0])
         self._current_context['FILE'] = filename
 
-    def cmd_index(self, args):
+    def cmd_index(self, args: str) -> None:
         timestr = args.split()[1]
         self._current_context['INDEX'] = timestr
-        self._current_context['POS_START_SAMPLES'] = self._timestr_to_samples(
+        self._current_context['POS_START_SAMPLES'] = _timestr_to_samples(
             timestr
         )
 
-    def cmd_track(self, args):
+    def cmd_track(self, args: str) -> None:
         num, _ = args.split()
         new_track_context = deepcopy(self._context_global)
         self._context_tracks.append(new_track_context)
         self._current_context = new_track_context
         self._current_context['TRACK_NUM'] = int(num)
 
-    def cmd_flags(self, args):
-        pass
+    def cmd_flags(self, args: str) -> None: ...

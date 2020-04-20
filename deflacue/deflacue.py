@@ -12,6 +12,8 @@ import logging
 import os
 from collections import defaultdict
 from subprocess import PIPE, Popen
+from typing import Any, DefaultDict, Dict, IO, List, Optional, Tuple, \
+    Union
 
 from .cue import CueParser
 from .exc import DeflacueError
@@ -25,6 +27,8 @@ __all__ = [
     'DeflacueError',
 ]
 
+_FilesDictType = Dict[str, List[str]]
+
 _COMMENTS_CUE_TO_VORBIS = {
     'TRACK_NUM': 'TRACKNUMBER',
     'TITLE': 'TITLE',
@@ -32,7 +36,34 @@ _COMMENTS_CUE_TO_VORBIS = {
     'ALBUM': 'ALBUM',
     'GENRE': 'GENRE',
     'DATE': 'DATE',
-}
+}  # type: Dict[str, str]
+
+
+def _filter_target_extensions(
+    files_dict: _FilesDictType
+) -> DefaultDict[str, List[str]]:
+    """Takes file dictionary created with `get_dir_files` and returns
+    dictionary of the same kind containing only audio files of supported
+    types.
+
+    """
+    files_filtered = defaultdict(list)
+    logging.info('Filtering .cue files ...')
+    paths = files_dict.keys()
+
+    for path in paths:
+        if not path.endswith('deflacue'):
+            files = sorted(files_dict[path])
+            for f in files:
+                if os.path.splitext(f)[1] == '.cue':
+                    files_filtered[path].append(f)
+    return files_filtered
+
+
+def _configure_logging(verbosity_lvl: int = logging.INFO) -> None:
+    """Switches on logging at given level."""
+    logging.basicConfig(level=verbosity_lvl,
+                        format='%(levelname)s: %(message)s')
 
 
 class Deflacue(object):
@@ -50,13 +81,13 @@ class Deflacue(object):
     """
 
     # Some lengthy shell command won't be executed on dry run.
-    _dry_run = False
+    _dry_run = False  # type: bool
 
     def __init__(self,
-                 source_path,
-                 dest_path=None,
-                 encoding=None,
-                 use_logging=logging.INFO):
+                 source_path: str,
+                 dest_path: Optional[str] = None,
+                 encoding: Optional[str] = None,
+                 use_logging: int = logging.INFO) -> None:
         """Prepares deflacue to for audio processing.
 
         `source_path` - Absolute or relative to the current directory path,
@@ -81,7 +112,7 @@ class Deflacue(object):
         self.encoding = encoding
 
         if use_logging:
-            self._configure_logging(use_logging)
+            _configure_logging(use_logging)
 
         logging.info('Source path: %s', self.path_source)
         if not os.path.exists(self.path_source):
@@ -91,7 +122,12 @@ class Deflacue(object):
             self.path_target = os.path.abspath(dest_path)
             os.chdir(self.path_source)
 
-    def _process_command(self, command, stdout=None, supress_dry_run=False):
+    def _process_command(
+        self,
+        command: str,
+        stdout: Optional[Union[int, IO[Any]]] = None,
+        supress_dry_run: bool = False,
+    ) -> Tuple[int, Union[Tuple[str, str], Tuple[bytes, bytes]]]:
         """Executes shell command with subprocess.Popen.
         Returns tuple, where first element is a process return code,
         and the second is a tuple of stdout and stderr output.
@@ -103,12 +139,7 @@ class Deflacue(object):
             return prc.returncode, std
         return 0, ('', '')
 
-    def _configure_logging(self, verbosity_lvl=logging.INFO):
-        """Switches on logging at given level."""
-        logging.basicConfig(level=verbosity_lvl,
-                            format='%(levelname)s: %(message)s')
-
-    def _create_target_path(self, path):
+    def _create_target_path(self, path: str) -> None:
         """Creates a directory for target files."""
         if not os.path.exists(path) and not self._dry_run:
             logging.debug('Creating target path: %s ...', path)
@@ -117,14 +148,14 @@ class Deflacue(object):
             except OSError:
                 raise DeflacueError('Unable to create target path: %s.' % path)
 
-    def set_dry_run(self):
+    def set_dry_run(self) -> None:
         """Sets deflacue into dry run mode, when all requested actions
         are only simulated, and no changes are written to filesystem.
 
         """
         self._dry_run = True
 
-    def get_dir_files(self, recursive=False):
+    def get_dir_files(self, recursive: bool = False) -> _FilesDictType:
         """Creates and returns dictionary of files in source directory.
         `recursive` - if True search is also performed within subdirectories.
 
@@ -133,7 +164,7 @@ class Deflacue(object):
             'Enumerating files under the source path (recursive=%s) ...',
             recursive,
         )
-        files = {}
+        files = {}  # type: Dict[str, List[str]]
         if not recursive:
             files[self.path_source] = [
                 f for f in os.listdir(self.path_source)
@@ -147,35 +178,17 @@ class Deflacue(object):
 
         return files
 
-    def filter_target_extensions(self, files_dict):
-        """Takes file dictionary created with `get_dir_files` and returns
-        dictionary of the same kind containing only audio files of supported
-        types.
-
-        """
-        files_filtered = defaultdict(list)
-        logging.info('Filtering .cue files ...')
-        paths = files_dict.keys()
-
-        for path in paths:
-            if not path.endswith('deflacue'):
-                files = sorted(files_dict[path])
-                for f in files:
-                    if os.path.splitext(f)[1] == '.cue':
-                        files_filtered[path].append(f)
-        return files_filtered
-
-    def sox_check_is_available(self):
+    def sox_check_is_available(self) -> bool:
         """Checks whether SoX is available."""
         result = self._process_command('sox -h', PIPE, supress_dry_run=True)
         return result[0] == 0
 
     def sox_extract_audio(self,
-                          source_file,
-                          pos_start_samples,
-                          pos_end_samples,
-                          target_file,
-                          metadata=None):
+                          source_file: str,
+                          pos_start_samples: int,
+                          pos_end_samples: int,
+                          target_file: str,
+                          metadata: Optional[Dict[str, Any]] = None):
         """Using SoX extracts a chunk from source audio file into target."""
         logging.info('Extracting `%s` ...', os.path.basename(target_file))
 
@@ -216,7 +229,7 @@ class Deflacue(object):
         if not self._dry_run:
             self._process_command(command, PIPE)
 
-    def process_cue(self, cue_file, target_path):
+    def process_cue(self, cue_file: str, target_path: str) -> None:
         """Parses .cue file, extracts separate tracks."""
         logging.info('Processing `%s`\n', os.path.basename(cue_file))
         parser = CueParser(cue_file, encoding=self.encoding)
@@ -235,11 +248,6 @@ class Deflacue(object):
         if cd_info['DATE'] is not None:
             title = '%s - %s' % (cd_info['DATE'], title)
 
-        try:  # Py2 support
-            target_path = target_path.decode('utf-8')
-        except AttributeError:
-            pass
-
         bundle_path = os.path.join(target_path, cd_info['PERFORMER'], title)
         self._create_target_path(bundle_path)
 
@@ -256,22 +264,22 @@ class Deflacue(object):
                 track['POS_START_SAMPLES'],
                 track['POS_END_SAMPLES'],
                 os.path.join(bundle_path, filename),
-                metadata=track
+                metadata=track,
             )
 
-    def do(self, recursive=False):
+    def do(self, recursive: bool = False) -> None:
         """Main method processing .cue files in batch."""
         if self.path_target is not None and not os.path.exists(
                 self.path_target
         ):
             self._create_target_path(self.path_target)
 
-        files_dict = self.filter_target_extensions(
+        files_dict = _filter_target_extensions(
             self.get_dir_files(recursive)
         )
 
-        dir_initial = os.getcwd()
-        paths = sorted(files_dict.keys())
+        dir_initial = os.getcwd()  # type: str
+        paths = sorted(files_dict.keys())  # type: List[str]
         for path in paths:
             os.chdir(path)
             logging.info('\n%s\n      Working on: %s\n', '====' * 10, path)
