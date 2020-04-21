@@ -8,9 +8,10 @@ Ubuntu users may install the following SoX packages: `sox`, `libsox-fmt-all`.
 
 deflacue can function both as a Python module and in command line mode.
 """
-import logging
-import os
 from collections import defaultdict
+from logging import debug, error, info
+from os import chdir, getcwd, listdir, makedirs, walk
+from os.path import abspath, basename, exists, isfile, join, split, splitext
 from subprocess import PIPE, Popen
 from typing import Any, DefaultDict, Dict, IO, List, Optional, Tuple, \
     Union
@@ -38,6 +39,8 @@ _COMMENTS_CUE_TO_VORBIS = {
     'DATE': 'DATE',
 }  # type: Dict[str, str]
 
+_DEFLACUES_SUBFOLDER_NAME = 'deflacue'
+
 
 def _filter_target_extensions(
     files_dict: _FilesDictType
@@ -48,22 +51,19 @@ def _filter_target_extensions(
 
     """
     files_filtered = defaultdict(list)
-    logging.info('Filtering .cue files ...')
+    info('Filtering .cue files ...')
     paths = files_dict.keys()
 
     for path in paths:
-        if not path.endswith('deflacue'):
-            files = sorted(files_dict[path])
-            for f in files:
-                if os.path.splitext(f)[1] == '.cue':
-                    files_filtered[path].append(f)
+        if path.endswith(_DEFLACUES_SUBFOLDER_NAME):
+            continue
+            
+        files = sorted(files_dict[path])
+        for f in files:
+            if splitext(f)[1] == '.cue':
+                files_filtered[path].append(f)
+                
     return files_filtered
-
-
-def _configure_logging(verbosity_lvl: int = logging.INFO) -> None:
-    """Switches on logging at given level."""
-    logging.basicConfig(level=verbosity_lvl,
-                        format='%(levelname)s: %(message)s')
 
 
 class Deflacue(object):
@@ -79,15 +79,11 @@ class Deflacue(object):
     `deflacue` directory under each source directory.
 
     """
-
-    # Some lengthy shell command won't be executed on dry run.
-    _dry_run = False  # type: bool
-
     def __init__(self,
                  source_path: str,
                  dest_path: Optional[str] = None,
                  encoding: Optional[str] = None,
-                 use_logging: int = logging.INFO) -> None:
+                 dry_run: bool = False) -> None:
         """Prepares deflacue to for audio processing.
 
         `source_path` - Absolute or relative to the current directory path,
@@ -101,26 +97,22 @@ class Deflacue(object):
 
         `encoding`    -  Encoding used for .cue file(s).
 
-        `use_logging` - Defines the verbosity level of deflacue. All messages
-                        produced by the application are logged with `logging`
-                        module.
-                        Examples: logging.INFO, logging.DEBUG.
-
+        `dry_run`     -  Sets deflacue into dry run mode, when all requested
+                         actions are only simulated, and no changes are
+                         written to filesystem.
         """
-        self.path_source = os.path.abspath(source_path)
-        self.path_target = dest_path
-        self.encoding = encoding
+        self._source_path = abspath(source_path)
+        self._dest_path = dest_path
+        self._encoding = encoding
+        self._dry_run = dry_run
 
-        if use_logging:
-            _configure_logging(use_logging)
-
-        logging.info('Source path: %s', self.path_source)
-        if not os.path.exists(self.path_source):
-            raise DeflacueError('Path `%s` is not found.' % self.path_source)
+        info('Source path: %s', self._source_path)
+        if not exists(self._source_path):
+            raise DeflacueError('Path `%s` is not found.' % self._source_path)
 
         if dest_path is not None:
-            self.path_target = os.path.abspath(dest_path)
-            os.chdir(self.path_source)
+            self._dest_path = abspath(dest_path)
+            chdir(self._source_path)
 
     def _process_command(
         self,
@@ -132,7 +124,7 @@ class Deflacue(object):
         Returns tuple, where first element is a process return code,
         and the second is a tuple of stdout and stderr output.
         """
-        logging.debug('Executing shell command: %s', command)
+        debug('Executing shell command: %s', command)
         if (self._dry_run and supress_dry_run) or not self._dry_run:
             prc = Popen(command, shell=True, stdout=stdout)
             std = prc.communicate()
@@ -141,40 +133,37 @@ class Deflacue(object):
 
     def _create_target_path(self, path: str) -> None:
         """Creates a directory for target files."""
-        if not os.path.exists(path) and not self._dry_run:
-            logging.debug('Creating target path: %s ...', path)
-            try:
-                os.makedirs(path)
-            except OSError:
-                raise DeflacueError('Unable to create target path: %s.' % path)
+        if exists(path) or self._dry_run:
+            return
 
-    def set_dry_run(self) -> None:
-        """Sets deflacue into dry run mode, when all requested actions
-        are only simulated, and no changes are written to filesystem.
+        debug('Creating target path: %s ...', path)
+        try:
+            makedirs(path)
+        except OSError:
+            raise DeflacueError('Unable to create target path: %s.' % path)
 
-        """
-        self._dry_run = True
-
-    def get_dir_files(self, recursive: bool = False) -> _FilesDictType:
+    def _get_dir_files(self, recursive: bool = False) -> _FilesDictType:
         """Creates and returns dictionary of files in source directory.
         `recursive` - if True search is also performed within subdirectories.
 
         """
-        logging.info(
+        info(
             'Enumerating files under the source path (recursive=%s) ...',
             recursive,
         )
-        files = {}  # type: Dict[str, List[str]]
         if not recursive:
-            files[self.path_source] = [
-                f for f in os.listdir(self.path_source)
-                if os.path.isfile(os.path.join(self.path_source, f))
-            ]
-        else:
-            for current_dir, _, dir_files in os.walk(self.path_source):
-                files[
-                    os.path.join(self.path_source, current_dir)
-                ] = [f for f in dir_files]
+            return {
+                self._source_path: [
+                    f for f in listdir(self._source_path)
+                    if isfile(join(self._source_path, f))
+                ]
+            }
+
+        files = {}  # type: Dict[str, List[str]]
+        for current_dir, _, dir_files in walk(self._source_path):
+            files[
+                join(self._source_path, current_dir)
+            ] = [f for f in dir_files]
 
         return files
 
@@ -183,37 +172,39 @@ class Deflacue(object):
         result = self._process_command('sox -h', PIPE, supress_dry_run=True)
         return result[0] == 0
 
-    def sox_extract_audio(self,
-                          source_file: str,
-                          pos_start_samples: int,
-                          pos_end_samples: int,
-                          target_file: str,
-                          metadata: Optional[Dict[str, Any]] = None):
+    def _sox_extract_audio(self,
+                           source_file: str,
+                           pos_start_samples: int,
+                           pos_end_samples: int,
+                           target_file: str,
+                           metadata: Optional[Dict[str, Any]] = None) -> None:
         """Using SoX extracts a chunk from source audio file into target."""
-        logging.info('Extracting `%s` ...', os.path.basename(target_file))
+        info('Extracting `%s` ...', basename(target_file))
 
         chunk_length_samples = ''
         if pos_end_samples is not None:
             chunk_length_samples = "%ss" % (pos_end_samples - pos_start_samples)
 
-        add_comment = ''
+        add_comment = []
         if metadata is not None:
-            logging.debug('Metadata: %s\n', metadata)
+            debug('Metadata: %s\n', metadata)
             for key, val in _COMMENTS_CUE_TO_VORBIS.items():
                 if key in metadata and metadata[key] is not None:
-                    add_comment = '--add-comment="%s=%s" %s' % (
-                        val, metadata[key], add_comment
+                    add_comment.append(
+                        '--add-comment="%s=%s"' % (val, metadata[key])
                     )
 
-        logging.debug('Extraction information:\n'
-                      '      Source file: %(source)s\n'
-                      '      Start position: %(pos_start)s samples\n'
-                      '      End position: %(pos_end)s samples\n'
-                      '      Length: %(length)s sample(s)',
-                      source=source_file,
-                      pos_start=pos_start_samples,
-                      pos_end=pos_end_samples,
-                      length=chunk_length_samples)
+        debug('Extraction information:\n'
+              '      Source file: %(source)s\n'
+              '      Start position: %(pos_start)s samples\n'
+              '      End position: %(pos_end)s samples\n'
+              '      Length: %(length)s sample(s)',
+              dict(
+                  source=source_file,
+                  pos_start=pos_start_samples,
+                  pos_end=pos_end_samples,
+                  length=chunk_length_samples,
+              ))
 
         command = (
             'sox -V1 "%(source)s" --comment="" %(add_comment)s '
@@ -223,20 +214,20 @@ class Deflacue(object):
             'target': target_file,
             'start_pos': pos_start_samples,
             'length': chunk_length_samples,
-            'add_comment': add_comment
+            'add_comment': ' '.join(add_comment),
         }
 
         if not self._dry_run:
             self._process_command(command, PIPE)
 
-    def process_cue(self, cue_file: str, target_path: str) -> None:
+    def _process_cue(self, cue_filepath: str, target_path: str) -> None:
         """Parses .cue file, extracts separate tracks."""
-        logging.info('Processing `%s`\n', os.path.basename(cue_file))
-        parser = CueParser(cue_file, encoding=self.encoding)
+        info('Processing `%s`\n', basename(cue_filepath))
+        parser = CueParser(cue_filepath, encoding=self._encoding)
         cd_info = parser.get_data_global()
 
-        if not os.path.exists(cd_info['FILE']):
-            logging.error(
+        if not exists(cd_info['FILE']):
+            error(
                 'Source file `%s` is not found. Cue Sheet is skipped.',
                 cd_info['FILE'],
             )
@@ -248,7 +239,7 @@ class Deflacue(object):
         if cd_info['DATE'] is not None:
             title = '%s - %s' % (cd_info['DATE'], title)
 
-        bundle_path = os.path.join(target_path, cd_info['PERFORMER'], title)
+        bundle_path = join(target_path, cd_info['PERFORMER'], title)
         self._create_target_path(bundle_path)
 
         tracks_count = len(tracks)
@@ -259,48 +250,46 @@ class Deflacue(object):
             filename = '%s - %s.flac' % (
                 track_num, track['TITLE'].replace('/', '')
             )
-            self.sox_extract_audio(
+            self._sox_extract_audio(
                 track['FILE'],
                 track['POS_START_SAMPLES'],
                 track['POS_END_SAMPLES'],
-                os.path.join(bundle_path, filename),
+                join(bundle_path, filename),
                 metadata=track,
             )
 
     def do(self, recursive: bool = False) -> None:
         """Main method processing .cue files in batch."""
-        if self.path_target is not None and not os.path.exists(
-                self.path_target
-        ):
-            self._create_target_path(self.path_target)
+        dest_path = self._dest_path
+
+        if dest_path is not None and not exists(dest_path):
+            self._create_target_path(dest_path)
 
         files_dict = _filter_target_extensions(
-            self.get_dir_files(recursive)
+            self._get_dir_files(recursive)
         )
 
-        dir_initial = os.getcwd()  # type: str
+        dir_initial = getcwd()  # type: str
         paths = sorted(files_dict.keys())  # type: List[str]
         for path in paths:
-            os.chdir(path)
-            logging.info('\n%s\n      Working on: %s\n', '====' * 10, path)
+            chdir(path)
+            info('\n%s\n      Working on: %s\n', '====' * 10, path)
 
-            if self.path_target is None:
+            if dest_path is None:
                 # When a target path is not specified, create `deflacue`
                 # subdirectory in every directory we are working at.
-                target_path = os.path.join(path, 'deflacue')
+                target_path = join(path, _DEFLACUES_SUBFOLDER_NAME)
             else:
                 # When a target path is specified, we create a subdirectory
                 # there named after the directory we are working on.
-                target_path = os.path.join(
-                    self.path_target, os.path.split(path)[1]
-                )
+                target_path = join(dest_path, split(path)[1])
 
             self._create_target_path(target_path)
-            logging.info('Target (output) path: %s', target_path)
+            info('Target (output) path: %s', target_path)
 
             for cue in files_dict[path]:
-                self.process_cue(os.path.join(path, cue), target_path)
+                self._process_cue(join(path, cue), target_path)
 
-        os.chdir(dir_initial)
+        chdir(dir_initial)
 
-        logging.info('We are done. Thank you.\n')
+        info('We are done. Thank you.\n')

@@ -1,5 +1,5 @@
-import logging
 from copy import deepcopy
+from logging import debug, warning
 from typing import Dict, List, Optional, Union
 
 from .exc import DeflacueError
@@ -10,6 +10,8 @@ __all__ = [
 
 
 _ContextType = Dict[str, Optional[Union[str, int]]]
+
+_DEFAULT_SAMPLE_RATE = 44100
 
 
 def _unquote(in_str: str) -> str:
@@ -32,19 +34,18 @@ def _timestr_to_sec(timestr: str) -> int:
 def _timestr_to_samples(timestr: str) -> int:
     """Converts `mm:ss:ff` time string into samples integer, assuming the
     CD sampling rate of 44100Hz."""
-    seconds_factor = 44100
     # 75 frames per second of audio
-    frames_factor = seconds_factor // 75
+    frames_factor = _DEFAULT_SAMPLE_RATE // 75
     full_seconds = _timestr_to_sec(timestr)
     frames = int(timestr.split(':')[-1])
-    return full_seconds * seconds_factor + frames * frames_factor
+    return full_seconds * _DEFAULT_SAMPLE_RATE + frames * frames_factor
 
 
 class CueParser(object):
     """Simple Cue Sheet file parser."""
 
     def __init__(self,
-                 cue_file: str,
+                 cue_filepath: str,
                  encoding: Optional[str] = None) -> None:
         self._context_global = {
             'PERFORMER': 'Unknown',
@@ -59,7 +60,7 @@ class CueParser(object):
 
         self._current_context = self._context_global  # type: _ContextType
         try:
-            with open(cue_file, encoding=encoding) as f:
+            with open(cue_filepath, encoding=encoding) as f:
                 lines = f.readlines()
         except UnicodeDecodeError:
             raise DeflacueError(
@@ -69,16 +70,17 @@ class CueParser(object):
             )
 
         for line in lines:
-            if line.strip():
-                command, args = line.strip().split(' ', 1)
-                logging.debug('Command `%s`. Args: %s', command, args)
-                method = getattr(self, 'cmd_%s' % command.lower(), None)
-                if method is not None:
-                    method(args)
-                else:
-                    logging.warning(
-                        'Unknown command `%s`. Skipping ...', command
-                    )
+            line = line.strip()
+            if not line:
+                continue
+                
+            command, args = line.split(' ', 1)
+            debug('Command `%s`. Args: %s', command, args)
+            method = getattr(self, 'cmd_%s' % command.lower(), None)
+            if method is not None:
+                method(args)
+            else:
+                warning('Unknown command `%s`. Skipping ...', command)
 
         for idx, track_data in enumerate(self._context_tracks):
             track_end_pos = None

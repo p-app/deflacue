@@ -1,5 +1,5 @@
 import argparse
-import logging
+from logging import DEBUG, INFO, basicConfig, exception
 
 from .deflacue import Deflacue
 from .exc import DeflacueError
@@ -9,9 +9,14 @@ __all__ = [
 ]
 
 
+def _configure_logging(log_level: int) -> None:
+    """Switches on logging at given level."""
+    basicConfig(level=log_level, format='%(levelname)s: %(message)s')
+
+
 def run_deflacue() -> None:
 
-    argparser = argparse.ArgumentParser('deflacue.py')
+    argparser = argparse.ArgumentParser('deflacue')
 
     argparser.add_argument(
         'source_path',
@@ -19,19 +24,24 @@ def run_deflacue() -> None:
     )
     argparser.add_argument(
         '-r',
+        '--recursive',
         help='Recursion flag to search directories under the source_path.',
         action='store_true',
     )
     argparser.add_argument(
         '-d',
+        '--dest-path',
         help='Absolute or relative destination path for output audio file(s).',
     )
     argparser.add_argument(
         '-e',
+        '--encoding',
         help='Cue Sheet file(s) encoding.',
     )
     argparser.add_argument(
         '--dry',
+        '--dry-run',
+        dest='dry_run',
         help='Perform the dry run with no changes done to filesystem.',
         action='store_true'
     )
@@ -41,20 +51,17 @@ def run_deflacue() -> None:
         action='store_true',
     )
 
-    parsed = argparser.parse_args()
-    kwargs = {'source_path': parsed.source_path}
+    args = argparser.parse_args()
 
-    if parsed.e is not None:
-        kwargs['encoding'] = parsed.e
-
-    if parsed.d is not None:
-        kwargs['dest_path'] = parsed.d
-
-    if parsed.debug:
-        kwargs['use_logging'] = logging.DEBUG
+    _configure_logging(DEBUG if args.debug else INFO)
 
     try:
-        deflacue = Deflacue(**kwargs)
+        deflacue = Deflacue(
+            args.source_path,
+            dest_path=args.dest_path,
+            encoding=args.encoding,
+            dry_run=args.dry_run,
+        )
 
         if not deflacue.sox_check_is_available():
             raise DeflacueError(
@@ -62,12 +69,9 @@ def run_deflacue() -> None:
                 '`sudo apt-get install sox libsox-fmt-all`).'
             )
 
-        if parsed.dry:
-            deflacue.set_dry_run()
-
-        deflacue.do(parsed.r)
+        deflacue.do(recursive=args.recursive)
     except DeflacueError as e:
-        logging.error(e)
+        exception(e)
 
 
 if __name__ == '__main__':
