@@ -44,4 +44,10 @@ setup(
         'Topic :: Multimedia :: Sound/Audio :: Conversion',
     ],
     python_requires='>=3.5',
+
+    extras_require={
+        'dev': [
+            'bumpversion',
+        ]
+    },
 )
