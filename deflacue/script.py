@@ -1,5 +1,6 @@
 import argparse
-from logging import DEBUG, INFO, basicConfig, exception
+from logging import DEBUG, INFO, basicConfig, exception, warning
+from os.path import abspath
 
 from .deflacue import Deflacue
 from .exc import DeflacueError
@@ -27,6 +28,14 @@ def run_deflacue() -> None:
         '--recursive',
         help='Recursion flag to search directories under the source_path.',
         action='store_true',
+        default=False,
+    )
+    argparser.add_argument(
+        '-i',
+        '--in-place',
+        help='In-place flag to convert files in their folders.',
+        action='store_true',
+        default=False,
     )
     argparser.add_argument(
         '-d',
@@ -43,22 +52,33 @@ def run_deflacue() -> None:
         '--dry-run',
         dest='dry_run',
         help='Perform the dry run with no changes done to filesystem.',
-        action='store_true'
+        action='store_true',
+        default=False,
     )
     argparser.add_argument(
         '--debug',
         help='Show debug messages while processing.',
         action='store_true',
+        default=False,
     )
 
     args = argparser.parse_args()
 
     _configure_logging(DEBUG if args.debug else INFO)
 
+    dest_path = args.dest_path
+    in_place = args.in_place
+
+    if in_place and dest_path:
+        warning('Option --dest-path is not used if favor of --in-place option.')
+        dest_path = None
+
+    elif dest_path is not None:
+        dest_path = abspath(dest_path)
+
     try:
         deflacue = Deflacue(
             args.source_path,
-            dest_path=args.dest_path,
             encoding=args.encoding,
             dry_run=args.dry_run,
         )
@@ -69,7 +89,9 @@ def run_deflacue() -> None:
                 '`sudo apt-get install sox libsox-fmt-all`).'
             )
 
-        deflacue.do(recursive=args.recursive)
+        deflacue.do(recursive=args.recursive,
+                    in_place=in_place,
+                    dest_path=dest_path)
     except DeflacueError as e:
         exception(e)
 
