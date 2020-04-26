@@ -89,11 +89,6 @@ class Deflacue(object):
                         containing .cue file(s) or subdirectories with
                         .cue file(s) to process.
 
-        `dest_path`   - Absolute or relative to the current directory path
-                        to store output files in.
-                        If None, output files are saved in `deflacue` directory
-                        in the same directory as input file(s).
-
         `encoding`    -  Encoding used for .cue file(s).
 
         `dry_run`     -  Sets deflacue into dry run mode, when all requested
