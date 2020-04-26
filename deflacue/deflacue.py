@@ -10,7 +10,7 @@ deflacue can function both as a Python module and in command line mode.
 """
 from collections import defaultdict
 from logging import debug, error, info
-from os import chdir, getcwd, listdir, makedirs, walk
+from os import chdir, getcwd, listdir, makedirs, remove, walk
 from os.path import abspath, basename, exists, isfile, join, split, splitext
 from subprocess import PIPE, Popen
 from typing import Any, DefaultDict, Dict, IO, List, Optional, Tuple, \
@@ -39,7 +39,7 @@ _COMMENTS_CUE_TO_VORBIS = {
     'DATE': 'DATE',
 }  # type: Dict[str, str]
 
-_DEFLACUES_SUBFOLDER_NAME = 'deflacue'
+_DEFLACUE_SUBFOLDER_NAME = 'deflacue'
 
 
 def _filter_target_extensions(
@@ -55,7 +55,7 @@ def _filter_target_extensions(
     paths = files_dict.keys()
 
     for path in paths:
-        if path.endswith(_DEFLACUES_SUBFOLDER_NAME):
+        if path.endswith(_DEFLACUE_SUBFOLDER_NAME):
             continue
             
         files = sorted(files_dict[path])
@@ -81,7 +81,6 @@ class Deflacue(object):
     """
     def __init__(self,
                  source_path: str,
-                 dest_path: Optional[str] = None,
                  encoding: Optional[str] = None,
                  dry_run: bool = False) -> None:
         """Prepares deflacue to for audio processing.
@@ -102,17 +101,12 @@ class Deflacue(object):
                          written to filesystem.
         """
         self._source_path = abspath(source_path)
-        self._dest_path = dest_path
         self._encoding = encoding
         self._dry_run = dry_run
 
         info('Source path: %s', self._source_path)
         if not exists(self._source_path):
             raise DeflacueError('Path `%s` is not found.' % self._source_path)
-
-        if dest_path is not None:
-            self._dest_path = abspath(dest_path)
-            chdir(self._source_path)
 
     def _process_command(
         self,
@@ -161,9 +155,7 @@ class Deflacue(object):
 
         files = {}  # type: Dict[str, List[str]]
         for current_dir, _, dir_files in walk(self._source_path):
-            files[
-                join(self._source_path, current_dir)
-            ] = [f for f in dir_files]
+            files[join(self._source_path, current_dir)] = dir_files
 
         return files
 
@@ -220,7 +212,10 @@ class Deflacue(object):
         if not self._dry_run:
             self._process_command(command, PIPE)
 
-    def _process_cue(self, cue_filepath: str, target_path: str) -> None:
+    def _process_cue(self,
+                     cue_filepath: str,
+                     target_path: str,
+                     in_place: bool) -> None:
         """Parses .cue file, extracts separate tracks."""
         info('Processing `%s`\n', basename(cue_filepath))
         parser = CueParser(cue_filepath, encoding=self._encoding)
@@ -239,8 +234,12 @@ class Deflacue(object):
         if cd_info['DATE'] is not None:
             title = '%s - %s' % (cd_info['DATE'], title)
 
-        bundle_path = join(target_path, cd_info['PERFORMER'], title)
-        self._create_target_path(bundle_path)
+        if in_place:
+            bundle_path = target_path
+
+        else:
+            bundle_path = join(target_path, cd_info['PERFORMER'], title)
+            self._create_target_path(bundle_path)
 
         tracks_count = len(tracks)
         for track in tracks:
@@ -258,11 +257,17 @@ class Deflacue(object):
                 metadata=track,
             )
 
-    def do(self, recursive: bool = False) -> None:
-        """Main method processing .cue files in batch."""
-        dest_path = self._dest_path
+        if in_place:
+            info('Removing %r file because of --in-place option.',
+                 cd_info['FILE'])
+            remove(cd_info['FILE'])
 
-        if dest_path is not None and not exists(dest_path):
+    def do(self,
+           dest_path: Optional[str] = None,
+           recursive: bool = False,
+           in_place: bool = False) -> None:
+        """Main method processing .cue files in batch."""
+        if not in_place and dest_path is not None and not exists(dest_path):
             self._create_target_path(dest_path)
 
         files_dict = _filter_target_extensions(
@@ -275,20 +280,25 @@ class Deflacue(object):
             chdir(path)
             info('\n%s\n      Working on: %s\n', '====' * 10, path)
 
-            if dest_path is None:
+            if in_place:
+                target_path = path
+
+            elif dest_path is None:
                 # When a target path is not specified, create `deflacue`
                 # subdirectory in every directory we are working at.
-                target_path = join(path, _DEFLACUES_SUBFOLDER_NAME)
+                target_path = join(path, _DEFLACUE_SUBFOLDER_NAME)
             else:
                 # When a target path is specified, we create a subdirectory
                 # there named after the directory we are working on.
                 target_path = join(dest_path, split(path)[1])
 
-            self._create_target_path(target_path)
+            if not in_place:
+                self._create_target_path(target_path)
+
             info('Target (output) path: %s', target_path)
 
             for cue in files_dict[path]:
-                self._process_cue(join(path, cue), target_path)
+                self._process_cue(join(path, cue), target_path, in_place)
 
         chdir(dir_initial)
 
