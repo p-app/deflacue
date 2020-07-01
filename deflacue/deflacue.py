@@ -270,7 +270,8 @@ class Deflacue(object):
     def do(self,
            dest_path: Optional[str] = None,
            recursive: bool = False,
-           in_place: bool = False) -> None:
+           in_place: bool = False,
+           skip_errors: bool = False) -> None:
         """Main method processing .cue files in batch."""
         if not in_place and dest_path is not None and not exists(dest_path):
             self._create_target_path(dest_path)
@@ -308,13 +309,15 @@ class Deflacue(object):
                 try:
                     self._process_cue(cue_filepath, target_path, in_place)
 
-                except DeflacueError as err:
-                    if in_place:
-                        warning('Error occured during processing %r cue '
-                                'file.' % cue_filepath, exc_info=err)
-
-                    else:
+                except Exception as err:
+                    if not skip_errors:
                         raise
+
+                    warning(
+                        'Error occured during processing %r cue '
+                        'file.' % cue_filepath,
+                    )
+                    debug('Error details: ', exc_info=err)
 
         chdir(dir_initial)
 
