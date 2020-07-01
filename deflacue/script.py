@@ -61,6 +61,12 @@ def run_deflacue() -> None:
         action='store_true',
         default=False,
     )
+    argparser.add_argument(
+        '--skip-errors',
+        help='Skip files, which processing occures any errors.',
+        action='store_true',
+        default=False,
+    )
 
     args = argparser.parse_args()
 
@@ -91,7 +97,8 @@ def run_deflacue() -> None:
 
         deflacue.do(recursive=args.recursive,
                     in_place=in_place,
-                    dest_path=dest_path)
+                    dest_path=dest_path,
+                    skip_errors=args.skip_errors)
     except DeflacueError as e:
         exception(e)
 
