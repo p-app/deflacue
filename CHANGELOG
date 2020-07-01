@@ -1,6 +1,11 @@
 deflacue changelog
 ==================
 
+v1.2.0
+------
++ "--skip-errors" argument was added for optional errors skipping.
+
+
 v1.1.0
 ------
 + "--in-place" argument was added for processing audio files in their locations.
