@@ -9,7 +9,7 @@ Ubuntu users may install the following SoX packages: `sox`, `libsox-fmt-all`.
 deflacue can function both as a Python module and in command line mode.
 """
 from collections import defaultdict
-from logging import debug, error, info
+from logging import debug, error, info, warning
 from os import chdir, getcwd, listdir, makedirs, remove, walk
 from os.path import abspath, basename, exists, isfile, join, split, splitext
 from subprocess import PIPE, Popen
@@ -29,6 +29,7 @@ __all__ = [
 ]
 
 _FilesDictType = Dict[str, List[str]]
+_ProcessResultType = Tuple[int, Union[Tuple[str, str], Tuple[bytes, bytes]]]
 
 _COMMENTS_CUE_TO_VORBIS = {
     'TRACK_NUM': 'TRACKNUMBER',
@@ -108,7 +109,7 @@ class Deflacue(object):
         command: str,
         stdout: Optional[Union[int, IO[Any]]] = None,
         supress_dry_run: bool = False,
-    ) -> Tuple[int, Union[Tuple[str, str], Tuple[bytes, bytes]]]:
+    ) -> _ProcessResultType:
         """Executes shell command with subprocess.Popen.
         Returns tuple, where first element is a process return code,
         and the second is a tuple of stdout and stderr output.
@@ -159,12 +160,14 @@ class Deflacue(object):
         result = self._process_command('sox -h', PIPE, supress_dry_run=True)
         return result[0] == 0
 
-    def _sox_extract_audio(self,
-                           source_file: str,
-                           pos_start_samples: int,
-                           pos_end_samples: int,
-                           target_file: str,
-                           metadata: Optional[Dict[str, Any]] = None) -> None:
+    def _sox_extract_audio(
+        self,
+        source_file: str,
+        pos_start_samples: int,
+        pos_end_samples: int,
+        target_file: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[_ProcessResultType]:
         """Using SoX extracts a chunk from source audio file into target."""
         info('Extracting `%s` ...', basename(target_file))
 
@@ -205,7 +208,7 @@ class Deflacue(object):
         }
 
         if not self._dry_run:
-            self._process_command(command, PIPE)
+            return self._process_command(command, PIPE)
 
     def _process_cue(self,
                      cue_filepath: str,
@@ -244,13 +247,20 @@ class Deflacue(object):
             filename = '%s - %s.flac' % (
                 track_num, track['TITLE'].replace('/', '')
             )
-            self._sox_extract_audio(
+
+            process_result = self._sox_extract_audio(
                 track['FILE'],
                 track['POS_START_SAMPLES'],
                 track['POS_END_SAMPLES'],
                 join(bundle_path, filename),
                 metadata=track,
             )
+
+            if process_result is not None and process_result[0] != 0:
+                raise DeflacueError(
+                    'Error occured during processing file %r.' %
+                    join(target_path, filename)
+                )
 
         if in_place:
             info('Removing %r file because of --in-place option.',
@@ -293,7 +303,18 @@ class Deflacue(object):
             info('Target (output) path: %s', target_path)
 
             for cue in files_dict[path]:
-                self._process_cue(join(path, cue), target_path, in_place)
+                cue_filepath = join(path, cue)
+
+                try:
+                    self._process_cue(cue_filepath, target_path, in_place)
+
+                except DeflacueError as err:
+                    if in_place:
+                        warning('Error occured during processing %r cue '
+                                'file.' % cue_filepath, exc_info=err)
+
+                    else:
+                        raise
 
         chdir(dir_initial)
 
